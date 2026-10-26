@@ -23,7 +23,11 @@ end
 ---@return Flash.Match?
 function M:_next(flags)
   flags = flags or ""
-  local ok, pos = pcall(vim.fn.searchpos, self.state.pattern.search, flags or "")
+  local pattern = self.state.pattern.search
+  if self.state.pinyin then
+    pattern = require("flash.pinyin").pattern(vim.api.nvim_win_get_buf(self.win), self.state.pattern)
+  end
+  local ok, pos = pcall(vim.fn.searchpos, pattern, flags or "")
   -- incomplete or invalid pattern
   if not ok then
     return

@@ -37,6 +37,7 @@ local Util = require("flash.util")
 ---@field rainbow? Flash.Rainbow
 ---@field ns number
 ---@field langmap table<string, string>
+---@field pinyin boolean
 local M = {}
 M.__index = M
 
@@ -123,7 +124,13 @@ function M.new(opts)
   elseif self.matcher == nil then
     self.matcher = Search.new
   end
-  self.pattern = Pattern.new(self.opts.pattern, self.opts.search.mode, self.opts.search.trigger)
+  local mode = self.opts.search.mode
+  self.pinyin = self.opts.search.pinyin
+    and mode == "exact"
+    and self.opts.matcher == nil
+    and not M.is_search()
+    and not vim.tbl_contains({ "search", "char", "treesitter", "treesitter_search", "remote" }, self.opts.mode or "")
+  self.pattern = Pattern.new(self.opts.pattern, mode, self.opts.search.trigger)
   self.visible = true
   self.cache = Cache.new(self)
   self.labeler = self.opts.labeler or require("flash.labeler").new(self):labeler()

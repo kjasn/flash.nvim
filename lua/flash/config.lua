@@ -27,6 +27,9 @@ local defaults = {
     --     return "\\<" .. str
     --   end,
     mode = "exact",
+    -- Match individual Chinese characters by their untoned pinyin prefix.
+    -- Only applies to ordinary exact jumps, not search/char/treesitter modes.
+    pinyin = false,
     -- behave like `incsearch`
     incremental = false,
     -- Excluded filetypes and custom window filters
