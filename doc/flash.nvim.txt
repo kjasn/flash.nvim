@@ -103,6 +103,9 @@ Default Settings ~
         --     return "\\<" .. str
         --   end,
         mode = "exact",
+        -- Match individual Chinese characters by their untoned pinyin prefix.
+        -- Only applies to ordinary exact jumps, not search/char/treesitter modes.
+        pinyin = false,
         -- behave like `incsearch`
         incremental = false,
         -- Excluded filetypes and custom window filters
@@ -399,6 +402,29 @@ USAGE                                            *flash.nvim-flash.nvim-usage*
         prompt text and integrate it into the statusline.
     - `highlights` are set to different defaults that will actually work in VS Code
 
+
+Chinese pinyin jumps                                     *flash.nvim-pinyin*
+
+Enable single-character pinyin prefixes for ordinary exact jumps:
+>lua
+    require("flash").setup({ search = { pinyin = true } })
+    -- Or enable it for one jump:
+    require("flash").jump({ search = { pinyin = true } })
+<
+`ha` matches both 好 and literal English ha; `hao` also matches 好. Internal
+syllable substrings, multi-character pinyin and initials are not supported.
+All dictionary readings participate: jiao and jue both match 角 regardless
+of context, with one label per position. Use untoned spelling and v for ü
+(lv for 绿). Matching honors 'ignorecase' and 'smartcase'. Labels retain
+existing placement and do not consume letters that continue a match.
+An explicit search.max_length still limits input.
+
+Disabled by default. Does not affect /, ?, character motions, Treesitter,
+remote mode, fuzzy search or custom matchers. The bundled dictionary loads
+lazily; using Flash needs neither Python nor network access. See
+third-party/pinyin-data.md in the repository for source and regeneration.
+With jump.register or jump.history enabled, the stored query remains literal;
+native n and hlsearch do not expand pinyin.
 
 API                                                *flash.nvim-flash.nvim-api*
 

@@ -113,6 +113,9 @@ Install the plugin with your preferred package manager:
     --     return "\\<" .. str
     --   end,
     mode = "exact",
+    -- Match individual Chinese characters by their untoned pinyin prefix.
+    -- Only applies to ordinary exact jumps, not search/char/treesitter modes.
+    pinyin = false,
     -- behave like `incsearch`
     incremental = false,
     -- Excluded filetypes and custom window filters
@@ -413,6 +416,34 @@ Install the plugin with your preferred package manager:
   - `prompt` is disabled. You can use `require("flash").prompt()` to get the
     prompt text and integrate it into the statusline.
   - `highlights` are set to different defaults that will actually work in VS Code
+
+### Chinese pinyin jumps
+
+Enable single-character pinyin matching for ordinary exact jumps:
+
+```lua
+require("flash").setup({ search = { pinyin = true } })
+-- Or enable it for one jump:
+require("flash").jump({ search = { pinyin = true } })
+```
+
+Typing `ha` matches both `好` and literal `ha` in English text. `hao` also
+matches `好`, but `ao`, `nihao`, and `nh` do not match it through pinyin.
+All dictionary readings are accepted: `jiao` and `jue` both match `角`,
+regardless of context. Each location receives at most one label.
+
+Use untoned spelling and `v` for `ü` (for example, `lv` for `绿`). Pinyin
+honors `ignorecase` and `smartcase`. Labels keep their existing placement
+(after the match by default); letters that can continue a match remain
+available for typing. An explicit `search.max_length` still limits input.
+
+This option is disabled by default and does not alter `/` or `?`, character
+motions, Treesitter, remote mode, fuzzy search, or custom matchers. Multi-character
+pinyin and initials are not supported. The bundled dictionary loads lazily;
+no Python installation or network connection is required at runtime.
+If you enable `jump.register` or `jump.history`, the stored search remains the
+original literal query; native `n` and `hlsearch` do not expand pinyin.
+See [dictionary provenance and regeneration](third-party/pinyin-data.md).
 
 ## 📡 API
 
