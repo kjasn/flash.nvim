@@ -4,6 +4,7 @@ local assert = require("luassert")
 
 describe("pinyin search", function()
   local states, buf, previous_buf, ignorecase, smartcase, extra_win, extra_buf
+  local saved_pinyin, saved_data, saved_loader, saved_notify, autocmds
 
   local function state(pattern, opts)
     local ret = State.new(vim.tbl_deep_extend("force", {
@@ -28,6 +29,16 @@ describe("pinyin search", function()
 
   before_each(function()
     states = {}
+    saved_pinyin, saved_data = package.loaded["flash.pinyin"], package.loaded["flash.pinyin.data"]
+    saved_loader, saved_notify = package.preload["flash.pinyin.data"], vim.notify
+    package.loaded["flash.pinyin"] = nil
+    package.loaded["flash.pinyin.data"] = { hao = "好浩号", ni = "你", jiao = "角", jue = "角", nv = "女" }
+    autocmds = {}
+    for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = "BufWipeout" })) do
+      if autocmd.id then
+        autocmds[autocmd.id] = true
+      end
+    end
     ignorecase, smartcase = vim.go.ignorecase, vim.go.smartcase
     vim.go.ignorecase, vim.go.smartcase = true, true
     previous_buf = vim.api.nvim_get_current_buf()
@@ -49,6 +60,39 @@ describe("pinyin search", function()
     vim.api.nvim_set_current_buf(previous_buf)
     vim.api.nvim_buf_delete(buf, { force = true })
     vim.go.ignorecase, vim.go.smartcase = ignorecase, smartcase
+    for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = "BufWipeout" })) do
+      if autocmd.id and not autocmds[autocmd.id] then
+        vim.api.nvim_del_autocmd(autocmd.id)
+      end
+    end
+    package.loaded["flash.pinyin"], package.loaded["flash.pinyin.data"] = saved_pinyin, saved_data
+    package.preload["flash.pinyin.data"], vim.notify = saved_loader, saved_notify
+  end)
+
+  it("keeps literal search working and warns once when the dictionary is missing", function()
+    package.loaded["flash.pinyin.data"] = nil
+    local loads, warnings = 0, {}
+    package.preload["flash.pinyin.data"] = function()
+      loads = loads + 1
+      error("dictionary is not installed")
+    end
+    vim.notify = function(message, level)
+      warnings[#warnings + 1] = { message = message, level = level }
+    end
+    set("好 hao")
+    assert.same({ { { 1, 4 }, { 1, 6 } } }, positions(state("hao")))
+    set("好 hala hao")
+    assert.same({
+      { { 1, 4 }, { 1, 5 } },
+      { { 1, 9 }, { 1, 10 } },
+    }, positions(state("ha")))
+    vim.wait(100, function()
+      return #warnings > 0
+    end)
+    assert.equals(1, loads)
+    assert.equals(1, #warnings)
+    assert.equals(vim.log.levels.WARN, warnings[1].level)
+    assert.is_not_nil(warnings[1].message:find("generate_pinyin.py", 1, true))
   end)
 
   it("combines Chinese prefixes with literal matches using original byte positions", function()

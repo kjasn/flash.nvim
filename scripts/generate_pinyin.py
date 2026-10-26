@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Regenerate the bundled dictionary (Python standard library only).
+"""Generate the optional local dictionary (Python 3.9+, standard library only).
 
 Run `python3 scripts/generate_pinyin.py` to fetch the pinned source, or pass
 `--source /path/to/pinyin.txt` to regenerate offline from an existing download.
-The source hash is checked in either case. Users of Flash do not need Python.
+The source hash is checked in either case. A verified, current dictionary is
+reused without downloading; pass --force to regenerate it.
 """
 
 import argparse
 import hashlib
+import http.client
+import os
 from pathlib import Path
 import re
+import sys
+import tempfile
 import unicodedata
 import urllib.request
 
@@ -18,6 +23,44 @@ REVISION = "9d05c9e29cb6a7e5c79f2f5279f5c1014246a19a"
 SOURCE_URL = f"https://raw.githubusercontent.com/mozillazg/pinyin-data/{REVISION}/pinyin.txt"
 SOURCE_SHA256 = "90c11bd680ccfe7f2617a6e25abdb1fb87b5540df3e6f011ca50aaf3c7263a89"
 ROOT = Path(__file__).resolve().parents[1]
+FORMAT_VERSION = 1
+
+
+def metadata():
+    return (
+        f"-- Generator format: {FORMAT_VERSION}\n"
+        f"-- Source revision: {REVISION}\n"
+        f"-- Source SHA-256: {SOURCE_SHA256}\n"
+    ).encode("ascii")
+
+
+def is_current(path):
+    try:
+        output = path.read_bytes()
+    except FileNotFoundError:
+        return False
+    prefix = metadata()
+    if not output.startswith(prefix):
+        return False
+    checksum, separator, body = output[len(prefix):].partition(b"\n")
+    return bool(separator) and checksum == (
+        b"-- Content SHA-256: " + hashlib.sha256(body).hexdigest().encode("ascii")
+    )
+
+
+def atomic_write(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False) as output:
+            temporary = Path(output.name)
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def normalize(reading):
@@ -29,11 +72,15 @@ def normalize(reading):
     return syllable
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, help="use a local copy of the pinned pinyin.txt")
     parser.add_argument("--output", type=Path, default=ROOT / "lua/flash/pinyin/data.lua")
-    args = parser.parse_args()
+    parser.add_argument("--force", action="store_true", help="regenerate even when the dictionary is current")
+    args = parser.parse_args(argv)
+    if not args.force and is_current(args.output):
+        print(f"Already current: {args.output}")
+        return
     if args.source:
         source = args.source.read_bytes()
     else:
@@ -65,12 +112,19 @@ def main():
     for syllable, chars in sorted(syllables.items()):
         lines.append(f'  ["{syllable}"] = "{"".join(sorted(chars))}",')
     lines.extend(["}", ""])
-    output = "\n".join(lines)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(output, encoding="utf-8")
+    body = "\n".join(lines).encode("utf-8")
+    output = metadata() + b"-- Content SHA-256: " + hashlib.sha256(body).hexdigest().encode("ascii") + b"\n" + body
+    atomic_write(args.output, output)
     print(f"Wrote {args.output}: {len(characters)} characters, {len(syllables)} syllables, "
-          f"{len(output.encode('utf-8'))} bytes, no excluded readings")
+          f"{len(output)} bytes, no excluded readings")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        print(f"Pinyin dictionary generation failed: {error}. "
+              "Check your network and output permissions, then rerun "
+              "`python3 scripts/generate_pinyin.py`; use --source PATH for a local "
+              "copy of the pinned pinyin.txt.", file=sys.stderr)
+        sys.exit(1)

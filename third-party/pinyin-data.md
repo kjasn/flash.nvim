@@ -9,22 +9,50 @@ Source: <https://raw.githubusercontent.com/mozillazg/pinyin-data/9d05c9e29cb6a7e
 
 Source SHA-256: `90c11bd680ccfe7f2617a6e25abdb1fb87b5540df3e6f011ca50aaf3c7263a89`
 
-Regenerate from the repository root using Python 3.9 or newer:
+The generated file is not tracked in Git. Users enabling pinyin need Python 3.9+
+and network access on the first build or when dictionary/generator versions change.
+Add `build = "python3 scripts/generate_pinyin.py"` to your lazy.nvim plugin spec.
+For an existing install, run `:Lazy build flash.nvim` and restart Neovim.
+
+Alternatively, generate from the plugin root:
 
 ```sh
 python3 scripts/generate_pinyin.py
 ```
 
-For offline regeneration, supply a previously downloaded source using
-`--source /path/to/pinyin.txt`. Both paths verify the pinned source hash.
+A current file is reused without downloading only when its generator format,
+source revision, source SHA-256 and content checksum all match. Use `--force` to
+regenerate anyway. For offline generation, supply a previously downloaded source
+using `--source /path/to/pinyin.txt`. Downloaded and local sources are verified
+against the pinned source hash before generation.
+
+Generation uses a temporary file in the destination directory and atomically
+replaces the output on success. Failures exit nonzero and preserve any previous
+file. Without a usable dictionary, pinyin falls back to literal matching with a
+one-time warning; repair the build and restart Neovim. No automatic runtime
+download takes place.
 The generator removes diacritics, maps `ü` to `v`, and deduplicates identical
 readings for each character. All listed readings are retained after this
 normalization; none are excluded. Unusual readings such as `m`, `ng`, and `ê`
 (normalized to `e`) are included. Characters are grouped by syllable and sorted
 by Unicode code point for deterministic output.
 
-The bundled table contains 44,440 characters and 426 normalized syllables.
+The generated table contains 44,440 characters and 426 normalized syllables.
 Coverage follows the upstream dictionary, including simplified, traditional,
 and supplementary-plane characters; it does not imply coverage of all Unicode
-Han characters. Python and network access are only needed when maintaining the
-generated data, not when using Flash.
+Han characters. Python and network access are needed to generate or update the dictionary,
+not during jumps. Users who do not enable pinyin have no additional dependencies.
+
+## Development checks
+
+The Lua matching tests use a small in-memory dictionary fixture, so a clean
+checkout can run them without generating data. For the install safety tests:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_generate_pinyin.py'
+```
+
+After changing normalization or output formatting, increment `FORMAT_VERSION`
+in the generator so previously generated files are rebuilt. Changes to the
+pinned source must update both `REVISION` and `SOURCE_SHA256`. Keep this license
+and attribution alongside the generator even though the data is untracked.

@@ -405,12 +405,23 @@ USAGE                                            *flash.nvim-flash.nvim-usage*
 
 Chinese pinyin jumps                                     *flash.nvim-pinyin*
 
-Enable single-character pinyin prefixes for ordinary exact jumps:
+Add the optional build to your existing lazy.nvim plugin spec:
 >lua
-    require("flash").setup({ search = { pinyin = true } })
-    -- Or enable it for one jump:
-    require("flash").jump({ search = { pinyin = true } })
+    {
+      "folke/flash.nvim", -- retain your fork's url/branch overrides, if any
+      build = "python3 scripts/generate_pinyin.py",
+      opts = { search = { pinyin = true } },
+    }
 <
+Generation requires Python 3.9+ and network access for the pinned dictionary.
+For an existing install run :Lazy build flash.nvim and restart Neovim. With
+other managers, run python3 scripts/generate_pinyin.py in the plugin directory.
+Users not enabling pinyin need neither the build step nor Python.
+
+A verified current dictionary is reused without downloading. Failed generation
+preserves the previous dictionary. Missing or unloadable data produces one
+warning and falls back to ordinary text search; rebuild and restart to recover.
+
 `ha` matches both 好 and literal English ha; `hao` also matches 好. Internal
 syllable substrings, multi-character pinyin and initials are not supported.
 All dictionary readings participate: jiao and jue both match 角 regardless
@@ -420,8 +431,8 @@ existing placement and do not consume letters that continue a match.
 An explicit search.max_length still limits input.
 
 Disabled by default. Does not affect /, ?, character motions, Treesitter,
-remote mode, fuzzy search or custom matchers. The bundled dictionary loads
-lazily; using Flash needs neither Python nor network access. See
+remote mode, fuzzy search or custom matchers. The generated dictionary loads
+lazily; jumps need neither Python nor network access after generation. See
 third-party/pinyin-data.md in the repository for source and regeneration.
 With jump.register or jump.history enabled, the stored query remains literal;
 native n and hlsearch do not expand pinyin.

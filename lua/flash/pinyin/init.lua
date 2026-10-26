@@ -2,6 +2,7 @@ local M = {}
 
 local utf8 = "[\194-\244][\128-\191]+"
 local readings ---@type table<string, string[]>?
+local unavailable = false
 local buffers = {} ---@type table<number, {tick:number, groups:table<string, string>, classes:table<string, string>}>
 
 vim.api.nvim_create_autocmd("BufWipeout", {
@@ -34,13 +35,39 @@ end
 
 ---@param buf number
 local function index(buf)
+  if unavailable then
+    return
+  end
   local tick = vim.api.nvim_buf_get_changedtick(buf)
   if buffers[buf] and buffers[buf].tick == tick then
     return buffers[buf]
   end
   if not readings then
+    local ok, data = pcall(require, "flash.pinyin.data")
+    if ok and type(data) == "table" then
+      for syllable, chars in pairs(data) do
+        if type(syllable) ~= "string" or type(chars) ~= "string" then
+          ok = false
+          break
+        end
+      end
+    else
+      ok = false
+    end
+    if not ok then
+      unavailable = true
+      vim.schedule(function()
+        vim.notify_once(
+          'flash.nvim: Pinyin dictionary is missing or invalid. Set build = "python3 scripts/generate_pinyin.py"'
+            .. " in your lazy.nvim spec, run :Lazy build flash.nvim, then restart Neovim."
+            .. " Ordinary text search remains available.",
+          vim.log.levels.WARN
+        )
+      end)
+      return
+    end
     readings = {}
-    for syllable, chars in pairs(require("flash.pinyin.data")) do
+    for syllable, chars in pairs(data) do
       for char in chars:gmatch(utf8) do
         readings[char] = readings[char] or {}
         table.insert(readings[char], syllable)
@@ -73,6 +100,9 @@ local function class(buf, value)
     return
   end
   local cached = index(buf)
+  if not cached then
+    return
+  end
   if cached.classes[prefix] == nil then
     local chars = {}
     for syllable, group in pairs(cached.groups) do
