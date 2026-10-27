@@ -419,6 +419,13 @@ function M:step(opts)
 
   -- exit if no results and not in regular search mode
   if #self.results == 0 and not self.pattern:empty() and self.pattern.mode ~= "search" then
+    if self.pinyin then
+      for _, win in ipairs(self.wins) do
+        if require("flash.pinyin").can_continue(win, self.pattern, self.opts.search.pinyin_options) then
+          return true
+        end
+      end
+    end
     if self.opts.search.incremental then
       vim.api.nvim_input(c)
     end

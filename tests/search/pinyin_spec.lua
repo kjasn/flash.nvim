@@ -240,6 +240,186 @@ describe("pinyin search", function()
     assert.same({ { { 1, 1 }, { 1, 7 } } }, positions(s))
   end)
 
+  it("keeps the real input loop active through unfinished mixed syllables", function()
+    set(" 中午好")
+    local s = state("", { search = { pinyin_options = { mixed = true } } })
+    for char in ("zhongwuh"):gmatch(".") do
+      s.get_char = function()
+        return char
+      end
+      assert.is_true(s:step())
+      if s.pattern() == "zhongwu" then
+        assert.same({}, s.results)
+      end
+    end
+    assert.same({ { { 1, 1 }, { 1, 7 } } }, positions(s))
+    s.get_char = function()
+      return Util.BS
+    end
+    assert.is_true(s:step())
+    assert.equals("zhongwu", s.pattern())
+    s.get_char = function()
+      return "x"
+    end
+    assert.is_nil(s:step())
+    assert.equals("zhongwux", s.pattern())
+  end)
+
+  it("does not keep an unfinished mixed syllable without a following character", function()
+    set(" 中午")
+    local s = state("zhongw", {
+      labels = "q",
+      search = { pinyin_options = { mixed = true } },
+    })
+    s.get_char = function()
+      return "u"
+    end
+    assert.is_nil(s:step())
+  end)
+
+  it("collects the same continuations as matching each extension in every mode", function()
+    local text = "中午好哇 中文 西安 先 最火 好浩号 你好 女 角 中，文 中😀文"
+    set(text)
+    local pinyin = require("flash.pinyin")
+    local Pattern = require("flash.search.pattern")
+    local labels = vim.split("abcdefghijklmnopqrstuvwxyz", "")
+    for flags = 0, 7 do
+      local opts = {
+        cross_character = flags % 2 == 1,
+        initials = math.floor(flags / 2) % 2 == 1,
+        mixed = math.floor(flags / 4) % 2 == 1,
+      }
+      for _, value in ipairs({
+        "h",
+        "ha",
+        "hao",
+        "n",
+        "nv",
+        "z",
+        "zh",
+        "zhong",
+        "zhongw",
+        "zhongwu",
+        "zhongwh",
+        "x",
+        "xi",
+        "xia",
+        "xian",
+        "j",
+        "ju",
+        "q",
+      }) do
+        local expected = {}
+        for _, label in ipairs(labels) do
+          local pattern = Pattern.new(value .. label, "exact")
+          local found = vim.regex(pinyin.pattern(buf, pattern, opts)):match_str(text) ~= nil
+          if opts.mixed then
+            local pending = pinyin.pattern(buf, pattern, { cross_character = true })
+              .. "[中午好哇文西安先最火浩号你女角]"
+            found = found or vim.regex(pending):match_str(text) ~= nil
+          end
+          if not found then
+            expected[#expected + 1] = label
+          end
+        end
+        assert.same(expected, pinyin.skip(0, Pattern.new(value, "exact"), labels, opts))
+      end
+    end
+  end)
+
+  it("updates runs and character counts across insertion, deletion and replacement", function()
+    set("好\n好\n中文\n中，文\n中😀文")
+    local pinyin = require("flash.pinyin")
+    local Pattern = require("flash.search.pattern")
+    local function matches(value, text)
+      return vim.regex(pinyin.pattern(buf, Pattern.new(value, "exact"))):match_str(text) ~= nil
+    end
+    local function skip()
+      return pinyin.skip(0, Pattern.new("zhong", "exact"), { "w" }, { cross_character = true })
+    end
+    assert.is_true(matches("hao", "好"))
+    assert.same({}, skip())
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, {})
+    assert.is_true(matches("hao", "好"))
+    vim.api.nvim_buf_set_lines(buf, 0, 1, false, { "你", "女" })
+    assert.is_false(matches("hao", "好"))
+    assert.is_true(matches("nv", "女"))
+    vim.api.nvim_buf_set_lines(buf, 2, 3, false, { "中 文" })
+    assert.same({ "w" }, skip())
+    vim.api.nvim_buf_set_lines(buf, 1, 1, false, { "中文" })
+    assert.same({}, skip())
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "ASCII only" })
+    assert.is_false(matches("zhong", "中"))
+    assert.same({ "w" }, skip())
+  end)
+
+  it("refreshes the index after undo and redo", function()
+    set("好")
+    local pinyin = require("flash.pinyin")
+    local Pattern = require("flash.search.pattern")
+    local function matches(value, text)
+      return vim.regex(pinyin.pattern(buf, Pattern.new(value, "exact"))):match_str(text) ~= nil
+    end
+    assert.is_true(matches("hao", "好"))
+    vim.cmd("let &undolevels = &undolevels")
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "女" })
+    assert.is_true(matches("nv", "女"))
+    assert.is_false(matches("hao", "好"))
+    vim.cmd("undo")
+    assert.is_true(matches("hao", "好"))
+    assert.is_false(matches("nv", "女"))
+    vim.cmd("redo")
+    assert.is_false(matches("hao", "好"))
+    assert.is_true(matches("nv", "女"))
+  end)
+
+  it("refreshes the index when a file is reloaded", function()
+    local path = vim.fn.tempname()
+    local ok, err = pcall(function()
+      vim.fn.writefile({ "中文" }, path)
+      extra_buf = vim.api.nvim_create_buf(true, false)
+      vim.api.nvim_set_current_buf(extra_buf)
+      vim.cmd("edit " .. vim.fn.fnameescape(path))
+      local pinyin = require("flash.pinyin")
+      local Pattern = require("flash.search.pattern")
+      local function skip()
+        return pinyin.skip(0, Pattern.new("zhong", "exact"), { "w" }, { cross_character = true })
+      end
+      assert.same({}, skip())
+      vim.fn.writefile({ "好" }, path)
+      vim.cmd("edit!")
+      assert.same({ "w" }, skip())
+      assert.is_not_nil(vim.regex(pinyin.pattern(extra_buf, Pattern.new("hao", "exact"))):match_str("好"))
+    end)
+    vim.fn.delete(path)
+    assert.is_true(ok, err)
+  end)
+
+  it("reads only changed lines after warming the buffer index", function()
+    local lines = {}
+    for i = 1, 1000 do
+      lines[i] = "中文"
+    end
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    local pinyin = require("flash.pinyin")
+    local Pattern = require("flash.search.pattern")
+    pinyin.pattern(buf, Pattern.new("zhong", "exact"))
+    local original, reads = vim.api.nvim_buf_get_lines, {}
+    vim.api.nvim_buf_get_lines = function(buffer, first, last, strict)
+      reads[#reads + 1] = { first, last }
+      return original(buffer, first, last, strict)
+    end
+    local ok, err = pcall(function()
+      vim.api.nvim_buf_set_lines(buf, 500, 501, false, { "好" })
+      local expression = pinyin.pattern(0, Pattern.new("hao", "exact"))
+      assert.is_not_nil(vim.regex(expression):match_str("好"))
+      pinyin.skip(0, Pattern.new("h", "exact"), { "a", "q" })
+    end)
+    vim.api.nvim_buf_get_lines = original
+    assert.is_true(ok, err)
+    assert.same({ { 500, 501 } }, reads)
+  end)
+
   it("falls back to literal search with a warning for excessively ambiguous queries", function()
     local warnings = {}
     vim.notify_once = function(message, level)
