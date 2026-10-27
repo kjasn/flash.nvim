@@ -445,11 +445,15 @@ describe("pinyin search", function()
       search = { pinyin_options = { retain_search = true } },
       jump = { register = false },
     })
+    vim.o.hlsearch = true
+    vim.fn.setreg("/", "中")
+    vim.v.hlsearch = 1
     require("flash.jump").on_jump(s)
     local retained = vim.fn.getreg("/")
     assert.is_truthy(vim.regex(retained):match_str("钟"))
     assert.is_truthy(vim.regex(retained):match_str("zhong"))
     assert.is_true(vim.o.hlsearch)
+    assert.equals(0, vim.v.hlsearch)
     set("中 钟")
     vim.v.searchforward = 1
     vim.cmd("normal! n")

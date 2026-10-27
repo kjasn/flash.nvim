@@ -472,7 +472,7 @@ opts = {
       cross_character = true, -- zhongwen / zhongw -> 中文
       initials = true, -- zh -> 最火 (also keeps the single-character prefix match 中)
       mixed = true, -- zhongwhw -> 中午好哇
-      retain_search = true, -- native n/N and search highlighting after a jump
+      retain_search = true, -- preserve pinyin matching for native n/N
     },
   },
 }
@@ -490,8 +490,9 @@ does not. Internal syllable substring matching is not supported.
 `retain_search` writes a dictionary-wide expanded regex to the `/` register
 after a successful jump, even when `jump.register` is false. Native `n/N` and
 `hlsearch` can then match newly inserted characters and other buffers. This
-replaces the previous search; `jump.nohlsearch` still takes precedence over
-showing highlights. `jump.history`, if enabled, keeps the original literal
+replaces the previous search. Flash clears active search highlights after the
+jump without disabling `hlsearch`; a later native search can highlight matches
+again. `jump.history`, if enabled, keeps the original literal
 query, so recalling it does not restore the expanded regex. With retention off,
 `jump.register` and `jump.history` retain their original literal behavior.
 Short prefixes and initials can produce large regexes with the complete dictionary.
