@@ -25,7 +25,11 @@ function M:_next(flags)
   flags = flags or ""
   local pattern = self.state.pattern.search
   if self.state.pinyin then
-    pattern = require("flash.pinyin").pattern(vim.api.nvim_win_get_buf(self.win), self.state.pattern)
+    pattern = require("flash.pinyin").pattern(
+      vim.api.nvim_win_get_buf(self.win),
+      self.state.pattern,
+      self.state.opts.search.pinyin_options
+    )
   end
   local ok, pos = pcall(vim.fn.searchpos, pattern, flags or "")
   -- incomplete or invalid pattern

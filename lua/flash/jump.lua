@@ -225,8 +225,13 @@ end
 function M.on_jump(state)
   -- fix or restore the search register
   local sf = vim.v.searchforward
-  if state.opts.jump.register then
-    vim.fn.setreg("/", state.pattern.search)
+  local retain = state.pinyin and state.opts.search.pinyin_options.retain_search
+  local pattern = state.pattern.search
+  if retain then
+    pattern = require("flash.pinyin").full_pattern(state.pattern, state.opts.search.pinyin_options)
+  end
+  if state.opts.jump.register or retain then
+    vim.fn.setreg("/", pattern)
   end
   vim.v.searchforward = sf
 
@@ -238,7 +243,7 @@ function M.on_jump(state)
   -- clear the highlight
   if state.opts.jump.nohlsearch then
     vim.cmd.nohlsearch()
-  elseif state.opts.jump.register then
+  elseif state.opts.jump.register or retain then
     -- this will show the search matches again
     vim.cmd("set hlsearch")
   end

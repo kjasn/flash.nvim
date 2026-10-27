@@ -106,6 +106,13 @@ Default Settings ~
         -- Match individual Chinese characters by their untoned pinyin prefix.
         -- Only applies to ordinary exact jumps, not search/char/treesitter modes.
         pinyin = false,
+        -- Optional extensions for ordinary exact pinyin jumps. Each is independent.
+        pinyin_options = {
+          cross_character = false, -- consecutive syllables, with a prefix allowed on the last character
+          initials = false, -- two or more consecutive initials
+          mixed = false, -- complete syllables followed by initials (one-way only)
+          retain_search = false, -- keep expanded matching for native n/N and hlsearch
+        },
         -- behave like `incsearch`
         incremental = false,
         -- Excluded filetypes and custom window filters
@@ -423,7 +430,7 @@ preserves the previous dictionary. Missing or unloadable data produces one
 warning and falls back to ordinary text search; rebuild and restart to recover.
 
 `ha` matches both 好 and literal English ha; `hao` also matches 好. Internal
-syllable substrings, multi-character pinyin and initials are not supported.
+syllable substrings are not supported. Multi-character extensions are opt-in.
 All dictionary readings participate: jiao and jue both match 角 regardless
 of context, with one label per position. Use untoned spelling and v for ü
 (lv for 绿). Matching honors 'ignorecase' and 'smartcase'. Labels retain
@@ -434,8 +441,23 @@ Disabled by default. Does not affect /, ?, character motions, Treesitter,
 remote mode, fuzzy search or custom matchers. The generated dictionary loads
 lazily; jumps need neither Python nor network access after generation. See
 third-party/pinyin-data.md in the repository for source and regeneration.
-With jump.register or jump.history enabled, the stored query remains literal;
-native n and hlsearch do not expand pinyin.
+Independent search.pinyin_options switches (default false, require pinyin=true):
+  cross_character  zhongwen / zhongw -> 中文; xian -> 先 or 西安
+  initials       zh -> 最火, while preserving single-character prefixes
+  mixed          zhongwhw -> 中午好哇 (complete syllables, then initials only)
+  retain_search  save a dictionary-wide regex for native n/N and hlsearch
+
+Initials use z/c/s for zh/ch/sh and require at least two letters. Mixed input
+works independently of cross_character and initials. Spaces, punctuation and
+actual newlines break Chinese matches; visual wrapping does not.
+retain_search replaces the / register after a successful jump even when
+jump.register=false. It covers inserted characters and other buffers;
+jump.nohlsearch still controls whether highlights are cleared. jump.history
+keeps the literal query, so recalling history does not restore the expansion.
+With retention disabled, jump.register and jump.history keep literal queries.
+Short prefixes and initials may produce large complete-dictionary regexes.
+Expansion exceeding the 256 KiB complexity budget warns once and falls back
+to literal matching to avoid blocking the editor.
 
 API                                                *flash.nvim-flash.nvim-api*
 

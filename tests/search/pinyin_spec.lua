@@ -5,6 +5,7 @@ local assert = require("luassert")
 describe("pinyin search", function()
   local states, buf, previous_buf, ignorecase, smartcase, extra_win, extra_buf
   local saved_pinyin, saved_data, saved_loader, saved_notify, autocmds
+  local search_register, searchforward, hlsearch, saved_notify_once
 
   local function state(pattern, opts)
     local ret = State.new(vim.tbl_deep_extend("force", {
@@ -31,8 +32,26 @@ describe("pinyin search", function()
     states = {}
     saved_pinyin, saved_data = package.loaded["flash.pinyin"], package.loaded["flash.pinyin.data"]
     saved_loader, saved_notify = package.preload["flash.pinyin.data"], vim.notify
+    saved_notify_once = vim.notify_once
     package.loaded["flash.pinyin"] = nil
-    package.loaded["flash.pinyin.data"] = { hao = "好浩号", ni = "你", jiao = "角", jue = "角", nv = "女" }
+    package.loaded["flash.pinyin.data"] = {
+      hao = "好浩号",
+      ni = "你",
+      jiao = "角",
+      jue = "角",
+      nv = "女",
+      zhong = "中钟",
+      wen = "文",
+      wu = "午",
+      wa = "哇",
+      zui = "最",
+      huo = "火",
+      xi = "西",
+      xian = "先",
+      an = "安",
+    }
+    search_register = vim.fn.getreg("/")
+    searchforward, hlsearch = vim.v.searchforward, vim.o.hlsearch
     autocmds = {}
     for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = "BufWipeout" })) do
       if autocmd.id then
@@ -60,6 +79,8 @@ describe("pinyin search", function()
     vim.api.nvim_set_current_buf(previous_buf)
     vim.api.nvim_buf_delete(buf, { force = true })
     vim.go.ignorecase, vim.go.smartcase = ignorecase, smartcase
+    vim.fn.setreg("/", search_register)
+    vim.v.searchforward, vim.o.hlsearch = searchforward, hlsearch
     for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = "BufWipeout" })) do
       if autocmd.id and not autocmds[autocmd.id] then
         vim.api.nvim_del_autocmd(autocmd.id)
@@ -67,6 +88,7 @@ describe("pinyin search", function()
     end
     package.loaded["flash.pinyin"], package.loaded["flash.pinyin.data"] = saved_pinyin, saved_data
     package.preload["flash.pinyin.data"], vim.notify = saved_loader, saved_notify
+    vim.notify_once = saved_notify_once
   end)
 
   it("keeps literal search working and warns once when the dictionary is missing", function()
@@ -124,6 +146,157 @@ describe("pinyin search", function()
       assert.same({}, positions(state(pattern)))
     end
     assert.same({ { { 1, 0 }, { 1, 3 } } }, positions(state("你好")))
+  end)
+
+  it("matches full syllables and a final prefix with every valid segmentation", function()
+    set("中文 先 西安")
+    local opts = { search = { pinyin_options = { cross_character = true } } }
+    for _, pattern in ipairs({ "zhongw", "zhongwen" }) do
+      assert.same({ { { 1, 0 }, { 1, 3 } } }, positions(state(pattern, opts)))
+    end
+    assert.same({
+      { { 1, 7 }, { 1, 7 } },
+      { { 1, 11 }, { 1, 14 } },
+    }, positions(state("xian", opts)))
+    assert.same({}, positions(state("zw", opts)))
+  end)
+
+  it("enables initials independently while preserving single-character prefixes", function()
+    set("中 最火 中文")
+    local opts = { search = { pinyin_options = { initials = true } } }
+    assert.same({
+      { { 1, 0 }, { 1, 0 } },
+      { { 1, 4 }, { 1, 7 } },
+      { { 1, 11 }, { 1, 11 } },
+    }, positions(state("zh", opts)))
+    assert.same({ { { 1, 11 }, { 1, 14 } } }, positions(state("zw", opts)))
+    assert.same({}, positions(state("zhongwen", opts)))
+  end)
+
+  it("enables mixed input independently and never returns to full spelling after initials", function()
+    set("中午好哇")
+    local opts = { search = { pinyin_options = { mixed = true } } }
+    assert.same({ { { 1, 0 }, { 1, 9 } } }, positions(state("zhongwhw", opts)))
+    assert.same({}, positions(state("zhongwhao", opts)))
+    assert.same({}, positions(state("zwhw", opts)))
+    assert.same({}, positions(state("zhongwuhao", opts)))
+    assert.same({}, positions(state("zhongwhw")))
+  end)
+
+  it("stops phrases at punctuation, spaces and real newlines but accepts soft wrapping", function()
+    set("中 文 中，文 中\n文 中文")
+    local opts = { search = { pinyin_options = { cross_character = true, initials = true } } }
+    for _, pattern in ipairs({ "zhongwen", "zw" }) do
+      assert.same({ { { 2, 4 }, { 2, 7 } } }, positions(state(pattern, opts)))
+    end
+    vim.cmd("vsplit")
+    extra_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_width(extra_win, 12)
+    vim.wo.wrap = true
+    set(string.rep(" ", 10) .. "中文")
+    assert.same({ { { 1, 10 }, { 1, 13 } } }, positions(state("zhongwen", opts)))
+  end)
+
+  it("reserves actual phrase continuations and recomputes them after backspace", function()
+    set(" 中午好哇")
+    local jumps = {}
+    local s = state("zhong", {
+      labels = "whq",
+      search = { pinyin_options = { mixed = true } },
+      action = function(match)
+        jumps[#jumps + 1] = match
+      end,
+    })
+    for _, pattern in ipairs({ "zhongw", "zhongwh", "zhongwhw" }) do
+      assert.is_nil(s:update({ pattern = pattern }))
+      assert.equals(pattern, s.pattern())
+    end
+    assert.same({}, jumps)
+    s:update({ pattern = s.pattern:extend(Util.BS) })
+    assert.equals("zhongwh", s.pattern())
+    assert.same({ { { 1, 1 }, { 1, 7 } } }, positions(s))
+    s:update({ pattern = "zhongwhw" })
+    local target = s.results[1]
+    assert.is_not_nil(target.label)
+    assert.is_true(s:update({ pattern = s.pattern() .. target.label }))
+    assert.same({ target }, jumps)
+  end)
+
+  it("reserves unfinished full syllables before the initials in mixed-only input", function()
+    set(" 中午好")
+    local jumps = {}
+    local s = state("zhongw", {
+      labels = "uhq",
+      search = { pinyin_options = { mixed = true } },
+      action = function(match)
+        jumps[#jumps + 1] = match
+      end,
+    })
+    for _, pattern in ipairs({ "zhongwu", "zhongwuh" }) do
+      assert.is_nil(s:update({ pattern = pattern }))
+      assert.equals(pattern, s.pattern())
+    end
+    assert.same({}, jumps)
+    assert.same({ { { 1, 1 }, { 1, 7 } } }, positions(s))
+  end)
+
+  it("falls back to literal search with a warning for excessively ambiguous queries", function()
+    local warnings = {}
+    vim.notify_once = function(message, level)
+      warnings[#warnings + 1] = { message = message, level = level }
+    end
+    local pattern = require("flash.search.pattern").new(string.rep("xian", 16), "exact")
+    local opts = { cross_character = true }
+    local pinyin = require("flash.pinyin")
+    assert.equals(pattern.search, pinyin.full_pattern(pattern, opts))
+    assert.equals(pattern.search, pinyin.full_pattern(pattern, opts))
+    vim.wait(100, function()
+      return #warnings > 0
+    end)
+    assert.equals(1, #warnings)
+    assert.equals(vim.log.levels.WARN, warnings[1].level)
+    assert.is_truthy(warnings[1].message:find("ambiguous", 1, true))
+    assert.is_truthy(vim.regex(pattern.search):match_str(pattern()))
+  end)
+
+  it("retains a complete dictionary search for native repeats across edits and buffers", function()
+    set("中")
+    local s = state("zhong", {
+      search = { pinyin_options = { retain_search = true } },
+      jump = { register = false },
+    })
+    require("flash.jump").on_jump(s)
+    local retained = vim.fn.getreg("/")
+    assert.is_truthy(vim.regex(retained):match_str("钟"))
+    assert.is_truthy(vim.regex(retained):match_str("zhong"))
+    assert.is_true(vim.o.hlsearch)
+    set("中 钟")
+    vim.v.searchforward = 1
+    vim.cmd("normal! n")
+    assert.same({ 1, 4 }, vim.api.nvim_win_get_cursor(0))
+    vim.cmd("normal! N")
+    assert.same({ 1, 0 }, vim.api.nvim_win_get_cursor(0))
+    extra_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(extra_buf)
+    vim.api.nvim_buf_set_lines(extra_buf, 0, -1, false, { " 钟" })
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    vim.cmd("normal! n")
+    assert.same({ 1, 1 }, vim.api.nvim_win_get_cursor(0))
+    assert.equals(retained, vim.fn.getreg("/"))
+  end)
+
+  it("does not retain searches without both the feature switch and eligible pinyin mode", function()
+    set("中")
+    for _, opts in ipairs({
+      {},
+      { search = { pinyin = false, pinyin_options = { retain_search = true } } },
+      { mode = "char", search = { mode = "exact", pinyin_options = { retain_search = true } } },
+    }) do
+      vim.fn.setreg("/", "previous")
+      local s = state("zhong", vim.tbl_deep_extend("force", { jump = { register = false } }, opts))
+      require("flash.jump").on_jump(s)
+      assert.equals("previous", vim.fn.getreg("/"))
+    end
   end)
 
   it("allows continued pinyin input and backspace before jumping with a label", function()

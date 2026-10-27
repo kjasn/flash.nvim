@@ -116,6 +116,13 @@ Install the plugin with your preferred package manager:
     -- Match individual Chinese characters by their untoned pinyin prefix.
     -- Only applies to ordinary exact jumps, not search/char/treesitter modes.
     pinyin = false,
+    -- Optional extensions for ordinary exact pinyin jumps. Each is independent.
+    pinyin_options = {
+      cross_character = false, -- consecutive syllables, with a prefix allowed on the last character
+      initials = false, -- two or more consecutive initials
+      mixed = false, -- complete syllables followed by initials (one-way only)
+      retain_search = false, -- keep expanded matching for native n/N and hlsearch
+    },
     -- behave like `incsearch`
     incremental = false,
     -- Excluded filetypes and custom window filters
@@ -453,11 +460,43 @@ honors `ignorecase` and `smartcase`. Labels keep their existing placement
 available for typing. An explicit `search.max_length` still limits input.
 
 This option is disabled by default and does not alter `/` or `?`, character
-motions, Treesitter, remote mode, fuzzy search, or custom matchers. Multi-character
-pinyin and initials are not supported. The generated dictionary loads lazily;
+motions, Treesitter, remote mode, fuzzy search, or custom matchers. The generated dictionary loads lazily;
 Python and network access are needed for generation, not during jumps.
-If you enable `jump.register` or `jump.history`, the stored search remains the
-original literal query; native `n` and `hlsearch` do not expand pinyin.
+Optional extensions have independent switches (all default to `false`):
+
+```lua
+opts = {
+  search = {
+    pinyin = true,
+    pinyin_options = {
+      cross_character = true, -- zhongwen / zhongw -> 中文
+      initials = true, -- zh -> 最火 (also keeps the single-character prefix match 中)
+      mixed = true, -- zhongwhw -> 中午好哇
+      retain_search = true, -- native n/N and search highlighting after a jump
+    },
+  },
+}
+```
+
+Full spelling accepts a prefix on the final character and all valid syllable
+segmentations (`xian` can match 先 or 西安). Initials use one letter per character
+(`z/c/s` for `zh/ch/sh`) and require at least two letters. Mixed input accepts
+one or more complete syllables followed by one or more initials; it cannot
+return to full spelling after an initial. Each extension works independently
+but requires `search.pinyin = true`. Matches stay within consecutive Chinese
+characters: spaces, punctuation and actual newlines break them; visual wrapping
+does not. Internal syllable substring matching is not supported.
+
+`retain_search` writes a dictionary-wide expanded regex to the `/` register
+after a successful jump, even when `jump.register` is false. Native `n/N` and
+`hlsearch` can then match newly inserted characters and other buffers. This
+replaces the previous search; `jump.nohlsearch` still takes precedence over
+showing highlights. `jump.history`, if enabled, keeps the original literal
+query, so recalling it does not restore the expanded regex. With retention off,
+`jump.register` and `jump.history` retain their original literal behavior.
+Short prefixes and initials can produce large regexes with the complete dictionary.
+Expansion has a 256 KiB complexity budget; queries exceeding it warn once and
+fall back to literal matching rather than blocking the editor.
 See [dictionary provenance and regeneration](third-party/pinyin-data.md).
 
 ## 📡 API

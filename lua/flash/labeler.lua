@@ -158,7 +158,7 @@ end
 ---@return string[] returns labels to skip or `nil` when all labels should be skipped
 function M:skip(win, labels)
   if self.state.pinyin then
-    labels = require("flash.pinyin").skip(win, self.state.pattern, labels)
+    labels = require("flash.pinyin").skip(win, self.state.pattern, labels, self.state.opts.search.pinyin_options)
   end
   local pattern = self.state.pattern.skip
 

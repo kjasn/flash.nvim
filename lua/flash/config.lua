@@ -30,6 +30,13 @@ local defaults = {
     -- Match individual Chinese characters by their untoned pinyin prefix.
     -- Only applies to ordinary exact jumps, not search/char/treesitter modes.
     pinyin = false,
+    -- Optional extensions for ordinary exact pinyin jumps. Each is independent.
+    pinyin_options = {
+      cross_character = false, -- consecutive syllables, with a prefix allowed on the last character
+      initials = false, -- two or more consecutive initials
+      mixed = false, -- complete syllables followed by initials (one-way only)
+      retain_search = false, -- keep expanded matching for native n/N and hlsearch
+    },
     -- behave like `incsearch`
     incremental = false,
     -- Excluded filetypes and custom window filters
