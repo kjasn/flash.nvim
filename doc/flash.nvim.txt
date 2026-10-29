@@ -1,5 +1,5 @@
 *flash.nvim.txt*                                               flash.nvim docs
-                                     For Neovim    Last change: 2026 August 22
+                                    For Neovim    Last change: 2026 October 29
 
 ==============================================================================
 Table of Contents                               *flash.nvim-table-of-contents*
@@ -10,6 +10,7 @@ Table of Contents                               *flash.nvim-table-of-contents*
   - Installation                          |flash.nvim-flash.nvim-installation|
   - Configuration                        |flash.nvim-flash.nvim-configuration|
   - Usage                                        |flash.nvim-flash.nvim-usage|
+  - Chinese pinyin jumps          |flash.nvim-flash.nvim-chinese-pinyin-jumps|
   - API                                            |flash.nvim-flash.nvim-api|
   - Examples                                  |flash.nvim-flash.nvim-examples|
   - Highlights                              |flash.nvim-flash.nvim-highlights|
@@ -54,7 +55,7 @@ lazy.nvim <https://github.com/folke/lazy.nvim>:
 
 >lua
     {
-      "folke/flash.nvim",
+      "kjasn/flash.nvim",
       event = "VeryLazy",
       ---@type Flash.Config
       opts = {},
@@ -249,14 +250,14 @@ Default Settings ~
           config = function(opts)
             -- autohide flash when in operator-pending mode
             opts.autohide = opts.autohide or (vim.fn.mode(true):find("no") and vim.v.operator == "y")
-    
+
             -- disable jump labels when not enabled, when using a count,
             -- or when recording/executing registers
             opts.jump_labels = opts.jump_labels
               and vim.v.count == 0
               and vim.fn.reg_executing() == ""
               and vim.fn.reg_recording() == ""
-    
+
             -- Show jump labels only in operator-pending mode
             -- opts.jump_labels = vim.v.count == 0 and vim.fn.mode(true):find("o")
           end,
@@ -410,54 +411,129 @@ USAGE                                            *flash.nvim-flash.nvim-usage*
     - `highlights` are set to different defaults that will actually work in VS Code
 
 
-Chinese pinyin jumps                                     *flash.nvim-pinyin*
+CHINESE PINYIN JUMPS              *flash.nvim-flash.nvim-chinese-pinyin-jumps*
 
-Add the optional build to your existing lazy.nvim plugin spec:
+Pinyin matching is opt-in and applies only to ordinary `exact` jumps. It keeps
+literal text matching and does not enable pinyin input for `/`, `?`, character
+motions, Treesitter, remote mode, fuzzy search, or custom matchers.
+
+
+INSTALLATION ~
+
+Generate the optional dictionary from the **flash.nvim plugin directory**:
+
+>sh
+    python3 scripts/generate_pinyin.py
+<
+
+Then enable pinyin in your existing Flash configuration and restart Neovim:
+
+>lua
+    require("flash").setup({ search = { pinyin = true } })
+<
+
+This works independently of your plugin manager. Generation needs **Python
+3.9+** and network access to download a pinned source. For offline generation,
+use `python3 scripts/generate_pinyin.py --source /path/to/pinyin.txt` with a
+local copy of that exact source. See dictionary provenance and regeneration
+<third-party/pinyin-data.md> for its version and checksum. Users who do not
+enable pinyin need neither Python nor a build step. Jumps use the local
+dictionary and never download data.
+
+If you use lazy.nvim <https://github.com/folke/lazy.nvim>, you can automate
+generation by adding these fields to your existing plugin spec:
+
 >lua
     {
-      "folke/flash.nvim", -- retain your fork's url/branch overrides, if any
+      "kjasn/flash.nvim",
       build = "python3 scripts/generate_pinyin.py",
       opts = { search = { pinyin = true } },
     }
 <
-Generation requires Python 3.9+ and network access for the pinned dictionary.
-For an existing install run :Lazy build flash.nvim and restart Neovim. With
-other managers, run python3 scripts/generate_pinyin.py in the plugin directory.
-Users not enabling pinyin need neither the build step nor Python.
 
-A verified current dictionary is reused without downloading. Failed generation
-preserves the previous dictionary. Missing or unloadable data produces one
-warning and falls back to ordinary text search; rebuild and restart to recover.
+For an already installed plugin, run `:Lazy build flash.nvim`, then restart
+Neovim. Other plugin managers can run the same generation command in their
+build hook or manually. Keep any existing repository and branch overrides.
 
-`ha` matches both 好 and literal English ha; `hao` also matches 好. Internal
-syllable substrings are not supported. Multi-character extensions are opt-in.
-All dictionary readings participate: jiao and jue both match 角 regardless
-of context, with one label per position. Use untoned spelling and v for ü
-(lv for 绿). Matching honors 'ignorecase' and 'smartcase'. Labels retain
-existing placement and do not consume letters that continue a match.
-An explicit search.max_length still limits input.
+A verified, current dictionary is reused without downloading. Failed generation
+preserves the previous file. If the dictionary is missing or invalid, Flash
+warns once and keeps ordinary text search working. Run the generation command
+again and restart Neovim after repairing the build. The generated
+`lua/flash/pinyin/data.lua` is ignored by Git and should not be edited
+manually.
 
-Disabled by default. Does not affect /, ?, character motions, Treesitter,
-remote mode, fuzzy search or custom matchers. The generated dictionary loads
-lazily; jumps need neither Python nor network access after generation. See
-third-party/pinyin-data.md in the repository for source and regeneration.
-Independent search.pinyin_options switches (default false, require pinyin=true):
-  cross_character  zhongwen / zhongw -> 中文; xian -> 先 or 西安
-  initials       zh -> 最火, while preserving single-character prefixes
-  mixed          zhongwhw -> 中午好哇 (complete syllables, then initials only)
-  retain_search  save a dictionary-wide regex for native n/N and hlsearch
 
-Initials use z/c/s for zh/ch/sh and require at least two letters. Mixed input
-works independently of cross_character and initials. Spaces, punctuation and
-actual newlines break Chinese matches; visual wrapping does not.
-retain_search replaces the / register after a successful jump even when
-jump.register=false. It covers inserted characters and other buffers;
-jump.nohlsearch still controls whether highlights are cleared. jump.history
-keeps the literal query, so recalling history does not restore the expansion.
-With retention disabled, jump.register and jump.history keep literal queries.
-Short prefixes and initials may produce large complete-dictionary regexes.
-Expansion exceeding the 256 KiB complexity budget warns once and falls back
-to literal matching to avoid blocking the editor.
+MATCHING AND INPUT ~
+
+With only `pinyin = true`, `ha` matches both `好` and literal English `ha`;
+`hao` also matches `好`. Internal syllable substrings such as `ao` do not
+match `好`. Multi-character input such as `nihao` or `nh` requires the
+extensions below. All dictionary readings participate: `jiao` and `jue` both
+match `角` regardless of context. Use untoned spelling and `v` for `ü`, for
+example `lv` for `绿`.
+
+Pinyin honors `ignorecase` and `smartcase`. Labels keep their existing
+placement; letters that can continue a match remain available for typing.
+Existing controls still apply: `search.trigger` gates label selection,
+`search.max_length` limits input, and `jump.autojump` can end input when only
+one match remains.
+
+The following extensions are independent, default to `false`, and require
+`search.pinyin = true`:
+
+>lua
+    search = {
+      pinyin = true,
+      pinyin_options = {
+        cross_character = true, -- zhongwen / zhongw -> 中文
+        initials = true, -- zw -> 中文; zh also keeps the single-character prefix 中
+        mixed = true, -- zhongwhw -> 中午好哇
+        retain_search = true, -- preserve pinyin matching for native n/N
+      },
+    }
+<
+
+Full spelling accepts a prefix on the final character and all valid syllable
+segmentations (`xian` can match `先` or `西安`). Initials use one letter per
+character (`z/c/s` for `zh/ch/sh`) and require at least two letters. Mixed
+input accepts one or more complete syllables followed by one or more initials;
+it cannot return to full spelling after an initial. While spelling a mixed
+query, input can remain active without complete matches if a real continuation
+exists, for example `zhongw -> zhongwu -> zhongwuh` for `中午好`.
+
+Multi-character matches stay within consecutive dictionary-covered characters.
+Spaces, punctuation, unrecognized characters, and actual newlines break them;
+visual wrapping does not. Literal text matching remains available throughout.
+
+
+NATIVE SEARCH RETENTION ~
+
+`retain_search` writes a dictionary-wide expanded regex to the `/` register
+after a successful jump, even when `jump.register` is false. This replaces the
+previous search and lets native `n/N` match newly inserted characters and other
+buffers. Flash clears active search highlights after the jump without changing
+the `hlsearch` option; a later native search can highlight matches again when
+that option is enabled.
+
+`jump.history`, if enabled, keeps the original literal query, so recalling it
+does not restore the expanded regex. With retention off, `jump.register` and
+`jump.history` retain their original literal behavior.
+
+
+PERFORMANCE AND LIMITS ~
+
+The dictionary loads on demand. The first pinyin search indexes the buffer;
+subsequent edits update the changed lines. Repeated character runs and query
+results are reused for label continuation checks. File reloads require a full
+index refresh, and inserting or deleting lines also shifts line metadata. An
+indexed buffer remains subscribed to edits until it is unloaded or deleted.
+
+Short prefixes, ambiguous syllable splits, and dictionary-wide retained
+searches can be expensive. Regex expansion has a 256 KiB size budget; exceeding
+it warns once and falls back to literal matching. This limits expression
+growth, not search execution time or total cache memory. Large files, long
+lines, and native search highlighting can still add latency.
+
 
 API                                                *flash.nvim-flash.nvim-api*
 
@@ -475,7 +551,7 @@ Type Definitions ~
 >typescript
     type FlashMatcher = (win: number, state: FlashState) => FlashMatch[];
     type FlashLabeler = (matches: FlashMatch[], state: FlashState) => void;
-    
+
     interface FlashMatch {
       win: number;
       pos: [number, number]; // (1,0)-indexed
@@ -483,7 +559,7 @@ Type Definitions ~
       label?: string | false; // set to false to never show a label for this match
       highlight?: boolean; // override opts.highlight.matches for this match
     }
-    
+
     // Check the code for the full definition
     // of Flash.State at `lua/flash/state.lua`
     type FlashState = {};
@@ -520,7 +596,7 @@ Show diagnostics at target, without changing cursor position ~
         state:restore()
       end,
     })
-    
+
     -- More advanced example that also highlights diagnostics:
     require("flash").jump({
       matcher = function(win)
@@ -721,7 +797,7 @@ HopWord (hop.nvim)
 
 >lua
     local Flash = require("flash")
-    
+
     ---@param opts Flash.Format
     local function format(opts)
       -- always show first and second label
@@ -730,7 +806,7 @@ HopWord (hop.nvim)
         { opts.match.label2, "FlashLabel" },
       }
     end
-    
+
     Flash.jump({
       search = { mode = "search" },
       label = { after = false, before = { 0, 0 }, uppercase = false, format = format },

@@ -55,8 +55,8 @@ local function load()
       unavailable = true
       vim.schedule(function()
         vim.notify_once(
-          'flash.nvim: Pinyin dictionary is missing or invalid. Set build = "python3 scripts/generate_pinyin.py"'
-            .. " in your lazy.nvim spec, run :Lazy build flash.nvim, then restart Neovim."
+          'flash.nvim: Pinyin dictionary is missing or invalid. Run "python3 scripts/generate_pinyin.py"'
+            .. " from the flash.nvim plugin directory, then restart Neovim."
             .. " Ordinary text search remains available.",
           vim.log.levels.WARN
         )

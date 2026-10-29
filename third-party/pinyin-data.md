@@ -9,16 +9,19 @@ Source: <https://raw.githubusercontent.com/mozillazg/pinyin-data/9d05c9e29cb6a7e
 
 Source SHA-256: `90c11bd680ccfe7f2617a6e25abdb1fb87b5540df3e6f011ca50aaf3c7263a89`
 
-The generated file is not tracked in Git. Users enabling pinyin need Python 3.9+
-and network access on the first build or when dictionary/generator versions change.
-Add `build = "python3 scripts/generate_pinyin.py"` to your lazy.nvim plugin spec.
-For an existing install, run `:Lazy build flash.nvim` and restart Neovim.
+## Generating the dictionary
 
-Alternatively, generate from the plugin root:
+The generated file is not tracked in Git. Generation requires Python 3.9+ and
+network access on the first build or when dictionary/generator versions change.
+From the **flash.nvim plugin directory**, run:
 
 ```sh
 python3 scripts/generate_pinyin.py
 ```
+
+This command works with any plugin manager. After generation, enable
+`search.pinyin` in your existing configuration and restart Neovim. For an optional
+lazy.nvim build hook, see [installation instructions](../README.md#chinese-pinyin-jumps).
 
 A current file is reused without downloading only when its generator format,
 source revision, source SHA-256 and content checksum all match. Use `--force` to
