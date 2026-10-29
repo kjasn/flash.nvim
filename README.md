@@ -28,6 +28,18 @@ enhanced character motions, and Treesitter integration.
       <img src="https://github.com/folke/flash.nvim/assets/292349/b963b05e-3d28-45ff-b43a-928a06e5f92a" />
     </td>
   </tr>
+  <tr>
+    <th>Chinese characters initials (汉字首字母缩写)</th>
+    <th>Chinese characters mixed (汉字全拼缩写混合输入)</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="./assets/Chinese-characters-initials.png" />
+    </td>
+    <td>
+      <img src="./assets/Chinese-characters-mixed.png" />
+    </td>
+  </tr>
 </table>
 
 ## ✨ Features
